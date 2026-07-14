@@ -1,308 +1,1182 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>How VADER Works: Interactive Explorer</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #4a6fa5;
-            --primary-light: #e8eef6;
-            --success: #2ecc71;
-            --danger: #e74c3c;
-            --neutral: #95a5a6;
-            --bg: #f8f9fa;
-            --card-bg: #ffffff;
-            --text-dark: #2c3e50;
-            --text-light: #7f8c8d;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How VADER Reads a Sentence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg);
-            color: var(--text-dark);
-            line-height: 1.6;
-            margin: 0;
-            padding: 0;
-        }
 
-        header {
-            background-color: var(--primary);
-            color: white;
-            padding: 2rem 1rem;
-            text-align: center;
-        }
+  /* ============================================================
+     TOKENS
+     Palette:
+       --ink        #EDEFF2   primary text on dark
+       --ink-dim    #9BA3B4   secondary text
+       --bg         #10141C   base background (deep navy-charcoal)
+       --bg-raised  #171D28   card background
+       --bg-inset   #0B0E14   dictionary / code surface (darkest)
+       --pos        #3FBF7F   positive green
+       --neg        #E85D5D   negative red / loss
+       --neu        #6B7280   neutral gray
+       --amber      #E8A23F   "the dictionary itself" accent
+       --rule       #262E3D   hairline borders
+     Type:
+       Display/narrative: 'Fraunces' (serif, has personality, editorial)
+       UI/body:           'Inter'
+       Code/dictionary:   'JetBrains Mono' (the lexicon IS a lookup table)
+     ============================================================ */
 
-        header h1 {
-            margin: 0 0 0.5rem 0;
-            font-size: 2.5rem;
-        }
+  :root{
+    --ink:#EDEFF2;
+    --ink-dim:#9BA3B4;
+    --ink-faint:#5C6478;
+    --bg:#10141C;
+    --bg-raised:#171D28;
+    --bg-inset:#0B0E14;
+    --pos:#3FBF7F;
+    --pos-dim:#1E3A2C;
+    --neg:#E85D5D;
+    --neg-dim:#3A2020;
+    --neu:#7C8494;
+    --neu-dim:#262A33;
+    --amber:#E8A23F;
+    --amber-dim:#3A2D16;
+    --rule:#242B38;
+    --radius:10px;
+  }
 
-        header p {
-            margin: 0;
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
 
-        .container {
-            max-width: 900px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-        }
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #1A2130 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #17202B 0%, transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
 
-        .card {
-            background: var(--card-bg);
-            border-radius: 10px;
-            padding: 2rem;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            margin-bottom: 2rem;
-        }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; scroll-behavior:auto !important;}
+  }
 
-        .card h2 {
-            margin-top: 0;
-            color: var(--primary);
-            border-bottom: 2px solid var(--primary-light);
-            padding-bottom: 0.5rem;
-        }
+  a{color:var(--amber);}
+  a:focus-visible, button:focus-visible, input:focus-visible, .token:focus-visible{
+    outline:2px solid var(--amber);
+    outline-offset:2px;
+  }
 
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
+  .wrap{
+    max-width:920px;
+    margin:0 auto;
+    padding:0 24px;
+  }
 
-        textarea {
-            width: 100%;
-            padding: 1rem;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-family: 'Inter', sans-serif;
-            font-size: 1rem;
-            resize: vertical;
-            min-height: 100px;
-            box-sizing: border-box;
-            transition: border-color 0.3s ease;
-        }
+  /* ---------- NAV ---------- */
+  .nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(16,20,28,0.86);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--rule);
+  }
+  .nav-inner{
+    max-width:920px; margin:0 auto; padding:14px 24px;
+    display:flex; align-items:center; justify-content:space-between;
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px;
+  }
+  .nav-brand{ color:var(--ink); font-weight:600; letter-spacing:0.02em; text-decoration:none;}
+  .nav-brand span{color:var(--amber);}
+  .nav-links{ display:flex; gap:22px; }
+  .nav-links a{ color:var(--ink-dim); text-decoration:none; }
+  .nav-links a:hover{ color:var(--ink); }
 
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
+  /* ---------- HERO ---------- */
+  .hero{
+    padding:88px 0 56px;
+    position:relative;
+  }
+  .hero-eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    color:var(--amber);
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    margin:0 0 18px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .hero-eyebrow::before{
+    content:"";
+    width:24px; height:1px; background:var(--amber);
+    display:inline-block;
+  }
+  h1{
+    font-family:'Fraunces',Georgia,serif;
+    font-weight:600;
+    font-size:clamp(34px, 5.2vw, 54px);
+    line-height:1.08;
+    letter-spacing:-0.01em;
+    margin:0 0 22px;
+  }
+  h1 em{
+    font-style:italic;
+    font-weight:500;
+    color:var(--amber);
+  }
+  .hero-sub{
+    font-size:18px;
+    color:var(--ink-dim);
+    max-width:620px;
+    margin:0 0 8px;
+  }
+  .hero-meta{
+    margin-top:28px;
+    display:flex; gap:10px; flex-wrap:wrap;
+  }
+  .pill{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:var(--ink-dim);
+    border:1px solid var(--rule);
+    padding:6px 12px;
+    border-radius:999px;
+  }
 
-        button {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 1rem 2rem;
-            font-size: 1rem;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background-color 0.3s ease;
-            align-self: flex-start;
-        }
+  /* ---------- SECTION SCAFFOLD ---------- */
+  section{
+    padding:64px 0;
+    border-top:1px solid var(--rule);
+  }
+  .section-label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:var(--ink-faint);
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+    margin:0 0 12px;
+  }
+  h2{
+    font-family:'Fraunces',Georgia,serif;
+    font-weight:600;
+    font-size:clamp(24px,3.4vw,32px);
+    margin:0 0 18px;
+    letter-spacing:-0.01em;
+  }
+  h3{
+    font-family:'Fraunces',Georgia,serif;
+    font-weight:600;
+    font-size:19px;
+    margin:0 0 10px;
+  }
+  p{ color:var(--ink-dim); font-size:16px; }
+  .lede{ font-size:17.5px; color:var(--ink); max-width:680px; }
+  strong{ color:var(--ink); font-weight:600; }
+  code{
+    font-family:'JetBrains Mono',monospace;
+    font-size:0.88em;
+    background:var(--bg-inset);
+    padding:2px 6px;
+    border-radius:4px;
+    color:var(--amber);
+    border:1px solid var(--rule);
+  }
 
-        button:hover {
-            background-color: #3b5982;
-        }
+  /* ---------- THE MACHINE (signature interactive) ---------- */
+  .machine{
+    background:var(--bg-raised);
+    border:1px solid var(--rule);
+    border-radius:16px;
+    padding:28px 26px 26px;
+    margin-top:28px;
+  }
+  .machine-top{
+    display:flex; align-items:baseline; justify-content:space-between;
+    gap:16px; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .machine-top h3{ margin:0; }
+  .machine-hint{ font-size:13px; color:var(--ink-faint); font-family:'JetBrains Mono',monospace; }
 
-        .results {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-top: 1.5rem;
-        }
+  .subsection-label{
+    font-family:'Fraunces',Georgia,serif;
+    font-weight:600;
+    font-style:italic;
+    font-size:15px;
+    color:var(--ink-dim);
+    margin:26px 0 12px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .subsection-label::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--rule);
+  }
+  .subsection-label-trail{ color:var(--amber); }
 
-        .score-box {
-            padding: 1.5rem;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: bold;
-        }
+  .example-row{
+    display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;
+  }
+  .example-btn{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    background:var(--bg-inset);
+    color:var(--ink-dim);
+    border:1px solid var(--rule);
+    padding:7px 12px;
+    border-radius:8px;
+    cursor:pointer;
+    transition:border-color .15s, color .15s;
+  }
+  .example-btn:hover{ border-color:var(--amber); color:var(--ink); }
+  .example-btn.active{ border-color:var(--amber); color:var(--amber); background:var(--amber-dim); }
 
-        .score-box.compound { background-color: var(--primary-light); color: var(--primary); grid-column: 1 / -1; font-size: 1.2rem;}
-        .score-box.pos { background-color: rgba(46, 204, 113, 0.1); color: var(--success); }
-        .score-box.neu { background-color: rgba(149, 165, 166, 0.1); color: var(--neutral); }
-        .score-box.neg { background-color: rgba(231, 76, 60, 0.1); color: var(--danger); }
+  .input-row{
+    display:flex; gap:10px; margin-bottom:22px;
+  }
+  #sentence-input{
+    flex:1;
+    background:var(--bg-inset);
+    border:1px solid var(--rule);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    padding:12px 14px;
+    border-radius:8px;
+  }
+  #sentence-input:focus{ border-color:var(--amber); outline:none; }
+  #run-btn{
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px;
+    font-weight:600;
+    background:var(--amber);
+    color:#1A1305;
+    border:none;
+    padding:0 20px;
+    border-radius:8px;
+    cursor:pointer;
+    transition:filter .15s, transform .15s;
+  }
+  #run-btn:hover{ filter:brightness(1.08); }
+  #run-btn:active{ transform:scale(0.97); }
 
-        .score-value {
-            font-size: 2rem;
-            margin-top: 0.5rem;
-            display: block;
-        }
+  .token-row{
+    display:flex; flex-wrap:wrap; gap:8px;
+    padding:20px 18px;
+    background:var(--bg-inset);
+    border-radius:10px;
+    border:1px solid var(--rule);
+    min-height:64px;
+    align-items:center;
+  }
+  .token{
+    font-family:'JetBrains Mono',monospace;
+    font-size:14.5px;
+    padding:7px 11px;
+    border-radius:7px;
+    background:var(--neu-dim);
+    color:var(--ink-dim);
+    border:1px solid transparent;
+    cursor:default;
+    position:relative;
+    transition:transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s;
+    animation:pop .32s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .token.pos{ background:var(--pos-dim); color:var(--pos); border-color:#2B5940; }
+  .token.neg{ background:var(--neg-dim); color:var(--neg); border-color:#5C3232; }
+  .token.scored{ font-weight:600; }
+  .token.scored:hover{ transform:translateY(-3px); box-shadow:0 6px 16px -4px rgba(0,0,0,0.5); }
+  .token .score-tag{
+    display:block;
+    font-size:10px;
+    font-weight:400;
+    opacity:0.75;
+    margin-top:1px;
+  }
 
-        .dictionary-viz {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-top: 1rem;
-            padding: 1rem;
-            background: var(--bg);
-            border-radius: 8px;
-        }
+  @keyframes pop{
+    from{ opacity:0; transform:scale(0.6) translateY(6px); }
+    to{ opacity:1; transform:scale(1) translateY(0); }
+  }
 
-        .word-token {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            background: #fff;
-            border: 1px solid #ddd;
-        }
+  .readout{
+    margin-top:22px;
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr auto;
+    gap:14px;
+    align-items:stretch;
+  }
+  @media (max-width:640px){
+    .readout{ grid-template-columns:1fr 1fr; }
+  }
+  .readout-cell{
+    background:var(--bg-inset);
+    border:1px solid var(--rule);
+    border-radius:8px;
+    padding:12px 14px;
+  }
+  .readout-cell .k{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--ink-faint);
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    margin-bottom:6px;
+  }
+  .readout-cell .v{
+    font-family:'JetBrains Mono',monospace;
+    font-size:20px;
+    font-weight:600;
+  }
+  .readout-cell.neg .v{ color:var(--neg); }
+  .readout-cell.pos .v{ color:var(--pos); }
+  .readout-cell.neu .v{ color:var(--neu); }
 
-        .word-token.positive { border-color: var(--success); color: var(--success); background: rgba(46, 204, 113, 0.05);}
-        .word-token.negative { border-color: var(--danger); color: var(--danger); background: rgba(231, 76, 60, 0.05);}
-        .word-token.neutral { border-color: var(--neutral); color: var(--neutral); }
+  .verdict{
+    grid-column:1 / -1;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--bg-inset);
+    border:1px solid var(--rule);
+    border-radius:8px;
+    padding:16px 18px;
+    margin-top:2px;
+    flex-wrap:wrap; gap:12px;
+  }
+  .verdict .label{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.08em;}
+  .verdict .compound{ font-family:'Fraunces',serif; font-size:26px; font-weight:600; }
+  .verdict-badge{
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px; font-weight:700;
+    padding:6px 14px; border-radius:999px;
+    text-transform:uppercase; letter-spacing:0.05em;
+  }
+  .verdict-badge.pos{ background:var(--pos-dim); color:var(--pos); }
+  .verdict-badge.neg{ background:var(--neg-dim); color:var(--neg); }
+  .verdict-badge.neu{ background:var(--neu-dim); color:var(--neu); }
 
-        .explanation {
-            background-color: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 1rem;
-            border-radius: 4px;
-            margin-top: 1.5rem;
-            font-size: 0.95rem;
-        }
-    </style>
+  .gauge-wrap{ margin-top:16px; }
+  .gauge-track{
+    position:relative;
+    height:10px;
+    border-radius:999px;
+    background:linear-gradient(90deg, var(--neg) 0%, var(--neg) 30%, var(--neu-dim) 47%, var(--neu-dim) 53%, var(--pos) 70%, var(--pos) 100%);
+    opacity:0.85;
+  }
+  .gauge-thumb{
+    position:absolute; top:50%; width:16px; height:16px;
+    background:var(--ink);
+    border:3px solid var(--bg);
+    border-radius:50%;
+    transform:translate(-50%,-50%);
+    transition:left .5s cubic-bezier(.34,1.2,.4,1);
+    box-shadow:0 0 0 2px rgba(255,255,255,0.15);
+  }
+  .gauge-labels{
+    display:flex; justify-content:space-between;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px; color:var(--ink-faint);
+    margin-top:8px;
+  }
+
+  .not-in-dict-note{
+    margin-top:14px;
+    font-size:13px;
+    color:var(--ink-faint);
+    display:none;
+  }
+  .not-in-dict-note.show{ display:block; }
+  .not-in-dict-note .word-list{ color:var(--neu); }
+
+  /* ---------- MATH TRAIL (word scores -> piles -> compound) ---------- */
+  .trail{
+    margin-top:22px;
+    display:grid;
+    grid-template-columns:1.15fr auto 1.3fr auto 1.1fr;
+    gap:14px;
+    align-items:start;
+  }
+  @media (max-width:860px){
+    .trail{ grid-template-columns:1fr; }
+    .trail-arrow{
+      flex-direction:row;
+      justify-content:center;
+      gap:10px;
+      padding-top:0;
+      margin:14px 0;
+    }
+    .trail-arrow svg{ transform:rotate(90deg); flex-shrink:0; }
+    .trail-arrow span{ text-align:left; line-height:1.4; }
+  }
+  .trail-col-label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--ink-faint);
+    text-transform:uppercase;
+    letter-spacing:0.07em;
+    margin-bottom:10px;
+  }
+  .trail-arrow{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; color:var(--ink-faint);
+    padding-top:34px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-align:center;
+    line-height:1.3;
+  }
+  .trail-arrow-compound{ color:var(--amber); }
+
+  .trail-vote-list{
+    background:var(--bg-inset);
+    border:1px solid var(--rule);
+    border-radius:10px;
+    padding:10px;
+    display:flex; flex-direction:column; gap:6px;
+    max-height:340px;
+    overflow-y:auto;
+  }
+  .trail-vote-row{
+    display:grid;
+    grid-template-columns:1fr auto;
+    align-items:center;
+    gap:8px;
+    padding:6px 9px;
+    border-radius:6px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    background:var(--bg-raised);
+    animation:pop .28s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .trail-vote-row .w{ color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .trail-vote-row .vote{ font-weight:600; white-space:nowrap; }
+  .trail-vote-row.pos .vote{ color:var(--pos); }
+  .trail-vote-row.neg .vote{ color:var(--neg); }
+  .trail-vote-row.neu .vote{ color:var(--ink-faint); }
+  .trail-vote-row.pos{ box-shadow:inset 2px 0 0 var(--pos); }
+  .trail-vote-row.neg{ box-shadow:inset 2px 0 0 var(--neg); }
+  .trail-vote-row.neu{ box-shadow:inset 2px 0 0 var(--ink-faint); }
+
+  .trail-piles{ display:flex; flex-direction:column; }
+  .trail-pile{
+    background:var(--bg-inset);
+    border:1px solid var(--rule);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+  }
+  .trail-pile:last-child{ margin-bottom:0; }
+  #pile-neg{ border-left:3px solid var(--neg); }
+  #pile-neu{ border-left:3px solid var(--ink-faint); }
+  #pile-pos{ border-left:3px solid var(--pos); }
+  .trail-pile-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:12.5px; color:var(--ink-dim); margin-bottom:6px;
+  }
+  .trail-pile-sum{ font-family:'JetBrains Mono',monospace; font-weight:600; color:var(--ink); }
+  .trail-pile-formula{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;
+    color:var(--ink-faint);
+    word-break:break-word;
+    line-height:1.5;
+    min-height:1.5em;
+  }
+  .trail-pile-result{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    color:var(--ink-dim);
+    margin-top:8px;
+    padding-top:8px;
+    border-top:1px dashed var(--rule);
+  }
+  .trail-pile-result strong{ color:var(--ink); }
+
+  .trail-compound-box{
+    background:var(--amber-dim);
+    border:1px solid #5A4420;
+    border-radius:10px;
+    padding:16px;
+  }
+  .trail-compound-formula{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:var(--amber);
+    line-height:1.6;
+    word-break:break-word;
+    margin-bottom:10px;
+    min-height:2.4em;
+  }
+  .trail-compound-eq{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+    color:var(--ink-dim);
+    padding-top:8px;
+    border-top:1px dashed #5A4420;
+  }
+  .trail-compound-eq strong{ color:var(--ink); }
+  .trail-compound-normalize strong{ color:var(--amber); }
+
+  .trail-caption{
+    margin-top:16px;
+    font-size:13px;
+    color:var(--ink-faint);
+    max-width:760px;
+  }
+  .trail-caption strong{ color:var(--ink-dim); }
+
+  /* ---------- DICTIONARY EXPLORER ---------- */
+  .dict-panel{
+    background:var(--bg-inset);
+    border:1px solid var(--rule);
+    border-radius:12px;
+    overflow:hidden;
+    margin-top:24px;
+  }
+  .dict-header-row{
+    display:grid;
+    grid-template-columns:1.4fr 0.9fr 2.2fr;
+    padding:12px 18px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    color:var(--ink-faint);
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    border-bottom:1px solid var(--rule);
+  }
+  .dict-row{
+    display:grid;
+    grid-template-columns:1.4fr 0.9fr 2.2fr;
+    padding:12px 18px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:13.5px;
+    border-bottom:1px solid var(--rule);
+    align-items:center;
+  }
+  .dict-row:last-child{ border-bottom:none; }
+  .dict-row .w{ color:var(--ink); }
+  .dict-row .s{ font-weight:600; }
+  .dict-row .s.pos{ color:var(--pos); }
+  .dict-row .s.neg{ color:var(--neg); }
+  .dict-bar-track{ height:6px; border-radius:999px; background:var(--neu-dim); position:relative; }
+  .dict-bar{ position:absolute; top:0; bottom:0; border-radius:999px; }
+  .dict-bar.pos{ background:var(--pos); left:50%; }
+  .dict-bar.neg{ background:var(--neg); right:50%; }
+  @media (max-width:640px){
+    .dict-header-row, .dict-row{ grid-template-columns:1fr 0.7fr; }
+    .dict-header-row > *:last-child, .dict-row > *:last-child{ display:none; }
+  }
+
+  /* ---------- GAP CALLOUT (missing words) ---------- */
+  .gap-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(110px,1fr));
+    gap:10px;
+    margin-top:20px;
+  }
+  .gap-word{
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px;
+    text-align:center;
+    padding:14px 8px;
+    background:var(--bg-inset);
+    border:1px dashed var(--ink-faint);
+    border-radius:8px;
+    color:var(--ink-dim);
+  }
+  .gap-word .tag{
+    display:block; font-size:9.5px; color:var(--ink-faint); margin-top:4px; letter-spacing:0.06em;
+  }
+
+  /* ---------- CASE STUDY (double meaning) ---------- */
+  .case-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px;
+  }
+  @media (max-width:700px){ .case-grid{ grid-template-columns:1fr; } }
+  .case-card{
+    background:var(--bg-raised);
+    border:1px solid var(--rule);
+    border-radius:12px;
+    padding:20px;
+  }
+  .case-card .sentence{
+    font-family:'Fraunces',serif;
+    font-size:17px;
+    margin-bottom:14px;
+    line-height:1.4;
+  }
+  .case-card .sentence .hl{
+    background:var(--amber-dim);
+    color:var(--amber);
+    padding:1px 5px;
+    border-radius:4px;
+  }
+  .case-card .verdict-line{
+    display:flex; align-items:center; gap:10px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12.5px;
+  }
+
+  /* ---------- STRENGTHS / WEAKNESSES ---------- */
+  .sw-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:24px;
+  }
+  @media (max-width:700px){ .sw-grid{ grid-template-columns:1fr; } }
+  .sw-card{
+    border-radius:12px;
+    padding:22px 22px 20px;
+    border:1px solid var(--rule);
+  }
+  .sw-card.strengths{ background:linear-gradient(180deg, rgba(63,191,127,0.06), transparent 40%), var(--bg-raised); }
+  .sw-card.weaknesses{ background:linear-gradient(180deg, rgba(232,93,93,0.06), transparent 40%), var(--bg-raised); }
+  .sw-card h3{ display:flex; align-items:center; gap:8px; }
+  .sw-card h3 .dot{ width:8px; height:8px; border-radius:50%; }
+  .sw-card.strengths h3 .dot{ background:var(--pos); }
+  .sw-card.weaknesses h3 .dot{ background:var(--neg); }
+  .sw-card ul{ margin:14px 0 0; padding-left:18px; color:var(--ink-dim); font-size:14.5px; }
+  .sw-card li{ margin-bottom:10px; }
+
+  /* ---------- FOOTER / BACK TO NOTEBOOK ---------- */
+  .cta{
+    text-align:center;
+    padding:70px 0 90px;
+  }
+  .cta h2{ margin-bottom:10px; }
+  .cta p{ max-width:480px; margin:0 auto 26px; }
+  .cta-btn{
+    display:inline-block;
+    font-family:'JetBrains Mono',monospace;
+    font-size:13.5px;
+    font-weight:600;
+    background:var(--amber);
+    color:#1A1305;
+    padding:13px 26px;
+    border-radius:8px;
+    text-decoration:none;
+    transition:filter .15s;
+  }
+  .cta-btn:hover{ filter:brightness(1.08); }
+
+  footer{
+    border-top:1px solid var(--rule);
+    padding:26px 0;
+    text-align:center;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:var(--ink-faint);
+  }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap;
+  }
+</style>
 </head>
 <body>
 
-    <header>
-        <h1>VADER Sentiment Explorer</h1>
-        <p>Interactive Dictionary & Rules-Based Sentiment Analysis</p>
-    </header>
-
-    <div class="container">
-        
-        <div class="card">
-            <h2>What is VADER?</h2>
-            <p><strong>VADER</strong> (Valence Aware Dictionary and sEntiment Reasoner) is an NLP tool that relies on a <strong>dictionary</strong> (a list of words) mapped to sentiment scores. It reads a sentence, scores each word based on its rules, and calculates an overall sentiment!</p>
-            <p>Try typing a sentence below involving stock market terms (like "surge", "crash", "great", "terrible") to see how VADER acts like a detective, picking out specific words to determine the mood.</p>
-        </div>
-
-        <div class="card">
-            <h2>Test VADER's Logic</h2>
-            <div class="input-group">
-                <textarea id="inputText" placeholder="e.g., The stock market saw a massive surge today, it is absolutely amazing!"></textarea>
-                <button onclick="analyzeSentiment()">Analyze Sentiment</button>
-            </div>
-
-            <div id="resultsContainer" style="display: none;">
-                
-                <h3>How VADER "sees" your sentence:</h3>
-                <div class="dictionary-viz" id="wordViz">
-                    <!-- Words injected here -->
-                </div>
-
-                <div class="explanation" id="logicExplanation">
-                    <!-- Explanation injected here -->
-                </div>
-
-                <h3>Final Scores:</h3>
-                <div class="results">
-                    <div class="score-box pos">
-                        Positive
-                        <span class="score-value" id="posScore">0.00</span>
-                    </div>
-                    <div class="score-box neu">
-                        Neutral
-                        <span class="score-value" id="neuScore">0.00</span>
-                    </div>
-                    <div class="score-box neg">
-                        Negative
-                        <span class="score-value" id="negScore">0.00</span>
-                    </div>
-                    <div class="score-box compound">
-                        Compound Score (-1 to 1)
-                        <span class="score-value" id="compScore">0.00</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#top" class="nav-brand">VADER<span>::</span>explained</a>
+    <div class="nav-links">
+      <a href="#machine">Try it</a>
+      <a href="#dictionary">The dictionary</a>
+      <a href="#gaps">The gaps</a>
+      <a href="#tradeoffs">Tradeoffs</a>
     </div>
+  </div>
+</nav>
 
-    <script>
-        // A mini, simplified version of VADER's lexicon for educational purposes
-        const mockLexicon = {
-            "surge": 1.5, "amazing": 2.0, "great": 1.8, "good": 1.0, "profit": 1.2, "bullish": 1.6, "skyrocket": 2.5, "celebrate": 1.5,
-            "crash": -2.0, "terrible": -2.1, "bad": -1.0, "loss": -1.5, "bearish": -1.6, "plummet": -2.2, "awful": -1.8, "scary": -1.2
-        };
+<div class="wrap">
 
-        function analyzeSentiment() {
-            const text = document.getElementById('inputText').value.toLowerCase();
-            if (!text.trim()) return;
+  <header class="hero" id="top">
+    <p class="hero-eyebrow">AI + Investing · Notebook 1 companion</p>
+    <h1>VADER doesn't <em>understand</em><br>your sentence. It <em>scores</em> it.</h1>
+    <p class="hero-sub">VADER — <strong>V</strong>alence <strong>A</strong>ware <strong>D</strong>ictionary and s<strong>E</strong>ntiment <strong>R</strong>easoner — has no idea what a stock is, what "moon" means on Reddit, or that "no profit" is bad news. It just adds up a list of numbers. Here's the whole trick, laid bare.</p>
+    <div class="hero-meta">
+      <span class="pill">real VADER lexicon scores</span>
+      <span class="pill">no black box</span>
+      <span class="pill">type your own sentence below ↓</span>
+    </div>
+  </header>
 
-            document.getElementById('resultsContainer').style.display = 'block';
-            
-            // Clean punctuation and split into words
-            const words = text.replace(/[.,!?;()]/g, '').split(/\s+/);
-            
-            let posSum = 0, negSum = 0, neuCount = 0;
-            const vizContainer = document.getElementById('wordViz');
-            vizContainer.innerHTML = '';
+  <!-- ================= THE MACHINE ================= -->
+  <section id="machine">
+    <p class="section-label">01 — See it work</p>
+    <h2>Watch VADER read a sentence, word by word</h2>
+    <p class="lede">Every word gets looked up in VADER's dictionary. Words that aren't there don't add any positive or negative weight — but they aren't erased either. They still get counted, just as a neutral vote. The scores that <em>are</em> found get added up into one number.</p>
 
-            let foundPos = [];
-            let foundNeg = [];
+    <div class="machine">
+      <div class="machine-top">
+        <h3>The sentence machine</h3>
+        <span class="machine-hint">click a word after scoring to see why</span>
+      </div>
 
-            words.forEach(word => {
-                if(!word) return;
-                
-                const span = document.createElement('span');
-                span.classList.add('word-token');
-                
-                let score = mockLexicon[word] || 0;
-                
-                if (score > 0) {
-                    span.classList.add('positive');
-                    span.textContent = `${word} (+${score})`;
-                    posSum += score;
-                    foundPos.push(word);
-                } else if (score < 0) {
-                    span.classList.add('negative');
-                    span.textContent = `${word} (${score})`;
-                    negSum += Math.abs(score);
-                    foundNeg.push(word);
-                } else {
-                    span.classList.add('neutral');
-                    span.textContent = `${word} (0)`;
-                    neuCount++;
-                }
-                
-                vizContainer.appendChild(span);
-            });
+      <div class="example-row" id="example-row"></div>
 
-            // Calculate mock VADER scores
-            const total = posSum + negSum + neuCount + 0.0001; // avoid div by zero
-            const pos = posSum / total;
-            const neg = negSum / total;
-            const neu = neuCount / total;
-            
-            // Simplified compound math for demo
-            let compound = (posSum - negSum) / Math.sqrt((posSum + negSum) * (posSum + negSum) + 15);
-            // Bound between -1 and 1
-            compound = Math.max(-1, Math.min(1, compound));
+      <div class="input-row">
+        <input id="sentence-input" type="text" maxlength="140" placeholder="Type your own sentence, or pick an example above…" />
+        <button id="run-btn">Score it</button>
+      </div>
 
-            // Update UI
-            document.getElementById('posScore').textContent = pos.toFixed(3);
-            document.getElementById('negScore').textContent = neg.toFixed(3);
-            document.getElementById('neuScore').textContent = neu.toFixed(3);
-            document.getElementById('compScore').textContent = compound.toFixed(3);
+      <div class="token-row" id="token-row" aria-live="polite"></div>
 
-            // Generate Logic Explanation
-            let exp = `VADER scanned your text and found `;
-            if (foundPos.length > 0) exp += `<strong>${foundPos.length} positive words</strong> (${foundPos.join(', ')}) `;
-            if (foundPos.length > 0 && foundNeg.length > 0) exp += ` and `;
-            if (foundNeg.length > 0) exp += `<strong>${foundNeg.length} negative words</strong> (${foundNeg.join(', ')}) `;
-            if (foundPos.length === 0 && foundNeg.length === 0) exp += `no strongly sentimental words in its dictionary. `;
-            
-            exp += `<br><br>The <strong>Compound Score</strong> combines these values. `;
-            if (compound >= 0.05) exp += `Since it's <strong>&ge; 0.05</strong>, VADER officially labels this sentence as <strong>Positive</strong>!`;
-            else if (compound <= -0.05) exp += `Since it's <strong>&le; -0.05</strong>, VADER officially labels this sentence as <strong>Negative</strong>!`;
-            else exp += `Since it's between -0.05 and 0.05, VADER officially labels this sentence as <strong>Neutral</strong>.`;
+      <p class="not-in-dict-note" id="not-in-dict-note"></p>
+      <p style="margin-top:6px; font-size:11.5px; color:var(--ink-faint);">Word scores above are real VADER lexicon values. The scores below use a simplified version of VADER's formula to keep the mechanism visible — real VADER also has extra rules for negation ("not," "never"), punctuation, and ALL CAPS that aren't modeled in this demo.</p>
 
-            document.getElementById('logicExplanation').innerHTML = exp;
-        }
-    </script>
+      <div class="subsection-label">The scores</div>
+
+      <div class="readout">
+        <div class="readout-cell neg">
+          <div class="k">Negative</div>
+          <div class="v" id="neg-val">0.00</div>
+        </div>
+        <div class="readout-cell neu">
+          <div class="k">Neutral</div>
+          <div class="v" id="neu-val">0.00</div>
+        </div>
+        <div class="readout-cell pos">
+          <div class="k">Positive</div>
+          <div class="v" id="pos-val">0.00</div>
+        </div>
+        <div class="readout-cell" style="min-width:110px;">
+          <div class="k">Words matched</div>
+          <div class="v" id="matched-val" style="color:var(--amber);">0/0</div>
+        </div>
+
+        <div class="verdict">
+          <div>
+            <div class="label">Compound score — this is what decides the verdict</div>
+            <div class="compound" id="compound-val">0.00</div>
+            <div class="gauge-wrap">
+              <div class="gauge-track"><div class="gauge-thumb" id="gauge-thumb"></div></div>
+              <div class="gauge-labels"><span>−1.0</span><span>−0.05</span><span>0</span><span>+0.05</span><span>+1.0</span></div>
+            </div>
+          </div>
+          <div class="verdict-badge neu" id="verdict-badge">NEUTRAL</div>
+        </div>
+      </div>
+
+      <div class="subsection-label subsection-label-trail">How VADER got there</div>
+
+      <div class="trail" id="trail">
+        <div class="trail-col trail-votes">
+          <div class="trail-col-label">1 · every word casts a vote</div>
+          <div class="trail-vote-list" id="trail-vote-list"></div>
+        </div>
+
+        <div class="trail-arrow">
+          <svg width="28" height="24" viewBox="0 0 28 24" fill="none"><path d="M2 12H24M24 12L16 4M24 12L16 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>add up each pile</span>
+        </div>
+
+        <div class="trail-col trail-piles">
+          <div class="trail-col-label">2 · three piles, one sentence</div>
+          <div class="trail-pile" id="pile-neg">
+            <div class="trail-pile-head"><span>Negative pile</span><span class="trail-pile-sum" id="pile-neg-sum">0.0</span></div>
+            <div class="trail-pile-formula" id="pile-neg-formula">—</div>
+            <div class="trail-pile-result">÷ total votes = <strong id="pile-neg-result">0.00</strong></div>
+          </div>
+          <div class="trail-pile" id="pile-neu">
+            <div class="trail-pile-head"><span>Neutral pile</span><span class="trail-pile-sum" id="pile-neu-sum">0.0</span></div>
+            <div class="trail-pile-formula" id="pile-neu-formula">—</div>
+            <div class="trail-pile-result">÷ total votes = <strong id="pile-neu-result">0.00</strong></div>
+          </div>
+          <div class="trail-pile" id="pile-pos">
+            <div class="trail-pile-head"><span>Positive pile</span><span class="trail-pile-sum" id="pile-pos-sum">0.0</span></div>
+            <div class="trail-pile-formula" id="pile-pos-formula">—</div>
+            <div class="trail-pile-result">÷ total votes = <strong id="pile-pos-result">0.00</strong></div>
+          </div>
+        </div>
+
+        <div class="trail-arrow trail-arrow-compound">
+          <svg width="28" height="24" viewBox="0 0 28 24" fill="none"><path d="M2 12H24M24 12L16 4M24 12L16 20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>separate calculation</span>
+        </div>
+
+        <div class="trail-col trail-compound">
+          <div class="trail-col-label">3 · compound uses only the matched words</div>
+          <div class="trail-compound-box">
+            <div class="trail-compound-formula" id="compound-formula">—</div>
+            <div class="trail-compound-eq">raw sum = <strong id="compound-rawsum">0.0</strong></div>
+            <div class="trail-compound-eq trail-compound-normalize">normalized: rawSum ÷ √(rawSum² + 15) = <strong id="compound-normalized">0.000</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="trail-caption">Two different calculations, side by side: the <strong>piles</strong> (left) count votes from every word, including words with no dictionary score. <strong>Compound</strong> (right) only ever looks at words that actually matched the dictionary. That's why they can tell different stories about the same sentence — and compound is the one VADER uses to decide the final verdict.</p>
+    </div>
+  </section>
+
+  <!-- ================= THE DICTIONARY ================= -->
+  <section id="dictionary">
+    <p class="section-label">02 — Under the hood</p>
+    <h2>The "dictionary" is a real, static list</h2>
+    <p class="lede">VADER's dictionary (its <em>lexicon</em>) is a list of about 7,500 words, each hand-rated by human annotators on a scale from roughly −4 (most negative) to +4 (most positive), before VADER ever sees your sentence. Nothing in it is learned or updated — it's fixed. Here's a small sample of real entries:</p>
+
+    <div class="dict-panel">
+      <div class="dict-header-row"><span>Word</span><span>Score</span><span>Scale (−4 to +4)</span></div>
+      <div id="dict-list"></div>
+    </div>
+    <p style="margin-top:14px; font-size:13.5px; color:var(--ink-faint);">These are the <strong>exact</strong> scores VADER's real lexicon assigns — nothing here is simplified for the demo.</p>
+  </section>
+
+  <!-- ================= THE GAPS ================= -->
+  <section id="gaps">
+    <p class="section-label">03 — Where it breaks</p>
+    <h2>If a word isn't in the dictionary, it has no opinion</h2>
+    <p class="lede">VADER's lexicon was built from general English writing — mostly product reviews, tweets, and news, rated years ago. It has never seen r/WallStreetBets. None of these words score <em>anything</em>, positive or negative, even though every one of them carries obvious sentiment on a finance forum:</p>
+
+    <div class="gap-grid" id="gap-grid"></div>
+
+    <p style="margin-top:18px;">This is exactly the pitfall from Section 4 of the notebook: <strong>VADER's dictionary isn't specialized for financial language, let alone social media slang.</strong> "Moon" and "diamond hands" don't register as positive. "Bear" and "bagholding" don't register as negative. VADER just sees empty space where the meaning is.</p>
+  </section>
+
+  <!-- ================= CASE STUDY: DOUBLE MEANING ================= -->
+  <section id="double-meaning">
+    <p class="section-label">04 — Where it breaks, part 2</p>
+    <h2>One word, two meanings — VADER only knows one</h2>
+    <p class="lede">Dictionaries can't tell context apart. VADER scores the word <code>beating</code> as negative (−2.0) every single time, because that's the only score it's allowed to have. Watch what happens to two sentences that use it completely differently:</p>
+
+    <div class="case-grid">
+      <div class="case-card">
+        <div class="sentence">Google is <span class="hl">beating</span> all of its competitors this quarter.</div>
+        <p style="font-size:13.5px; margin:0 0 14px;">A human reads this as <strong>good news</strong> for Google.</p>
+        <div class="verdict-line">
+          <span class="verdict-badge neg">VADER says: NEGATIVE</span>
+        </div>
+      </div>
+      <div class="case-card">
+        <div class="sentence">Google's stock is really taking a <span class="hl">beating</span> this week.</div>
+        <p style="font-size:13.5px; margin:0 0 14px;">A human reads this as <strong>bad news</strong> for Google.</p>
+        <div class="verdict-line">
+          <span class="verdict-badge neg">VADER says: NEGATIVE</span>
+        </div>
+      </div>
+    </div>
+    <p style="margin-top:16px;">VADER gets the second one right by accident — not because it understood "taking a beating" as an idiom, but because the dictionary only ever has one answer for "beating," no matter what surrounds it.</p>
+  </section>
+
+  <!-- ================= TRADEOFFS ================= -->
+  <section id="tradeoffs">
+    <p class="section-label">05 — The verdict</p>
+    <h2>So why use VADER at all?</h2>
+    <p class="lede">A dictionary-and-rules approach is a real, useful tool — just not a magic one. Knowing exactly what it can and can't do is what makes it usable.</p>
+
+    <div class="sw-grid">
+      <div class="sw-card strengths">
+        <h3><span class="dot"></span>Strengths</h3>
+        <ul>
+          <li><strong>Fast.</strong> Every score is just a dictionary lookup and a sum — no training, no GPU, milliseconds per sentence.</li>
+          <li><strong>Transparent.</strong> You can point to the exact word that produced a score. There's no hidden reasoning to reverse-engineer.</li>
+          <li><strong>Free and offline.</strong> No API calls, no cost per request, no rate limits.</li>
+        </ul>
+      </div>
+      <div class="sw-card weaknesses">
+        <h3><span class="dot"></span>Weaknesses</h3>
+        <ul>
+          <li><strong>No context.</strong> Word order, sarcasm, and idioms don't change the score.</li>
+          <li><strong>Fixed vocabulary.</strong> Slang, jargon, and new words (like "diamond hands") score as nothing at all.</li>
+          <li><strong>One word, one meaning.</strong> "Beating" can't mean two different things depending on the sentence.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="cta">
+    <h2>Back to the notebook</h2>
+    <p>Next up: FinVADER swaps in a finance-specific dictionary to close some of these gaps — but keeps the same rules-based approach. Then Notebook 2 replaces the dictionary entirely with an LLM.</p>
+    <a class="cta-btn" href="#top">↑ Back to top</a>
+  </div>
+
+</div>
+
+<footer>
+  built for AI + Investing · Inspirit AI · lexicon scores from the real VADER package
+</footer>
+
+<script>
+(function(){
+
+  // Real VADER lexicon values (extracted directly from vaderSentiment package)
+  const LEXICON = {
+    "great": 3.1, "amazing": 2.8, "celebrate": 2.7, "good": 1.9, "bad": -2.5,
+    "terrible": -2.1, "love": 3.2, "hate": -2.7, "beating": -2.0, "crash": -1.7,
+    "profit": 1.9, "profits": 1.9, "loss": -1.3, "gain": 2.4, "gains": 1.4,
+    "strong": 2.3, "weak": -1.9, "excited": 1.4, "worried": -1.2, "confident": 2.2,
+    "happy": 2.7, "sad": -2.1, "best": 3.2, "worst": -3.1, "win": 2.8,
+    "winning": 2.4, "lose": -1.7, "losing": -1.6, "lost": -1.3, "won": 2.7,
+    "no": -1.2, "significant": 0.8, ":)": 2.0, ":(": -1.9
+  };
+
+  const NOT_IN_DICT = ["beat","crashing","soar","soaring","surge","surging","moon","rocket",
+    "bull","bear","rally","rallying","plunge","plunging","afraid","diamond","hands",
+    "bagholding","tendies","yolo","stonks"];
+
+  const COMPOUND_POS = 0.05, COMPOUND_NEG = -0.05;
+
+  const EXAMPLES = [
+    "This stock is going to the moon! Amazing gains today.",
+    "Company beat earnings expectations and profits are soaring.",
+    "Google's stock is really taking a beating this week.",
+    "The company posted weak results and a big loss this quarter.",
+    "I love this stock, it's a great buy right now."
+  ];
+
+  // ---- simplified VADER-style scoring for demo purposes ----
+  // Mirrors real VADER's actual ratio logic (score_valence / _sift_sentiment_scores):
+  // every word in the sentence "votes." A positive word votes (score + 1),
+  // a negative word votes (score - 1) [the +1/-1 is VADER's own compensation
+  // constant for neutral words], and every other word votes as one neutral point.
+  // pos/neg/neu are just each side's share of the total votes.
+  // The compound score is a separate calculation: it only normalizes the
+  // raw sum of matched word scores, ignoring words with no dictionary entry.
+  // Does not implement VADER's negation ("not," "never"), punctuation-emphasis,
+  // or ALL-CAPS booster rules.
+  function tokenize(text){
+    return text.match(/[A-Za-z':)(]+|[!?.]/g) || [];
+  }
+
+  function score(text){
+    const rawTokens = tokenize(text);
+    const words = rawTokens.filter(t => !/^[!?.]$/.test(t)); // drop bare punctuation from word count
+
+    const results = words.map(t => {
+      const key = t.toLowerCase();
+      const inDict = LEXICON.hasOwnProperty(key);
+      return { raw:t, key, value: inDict ? LEXICON[key] : 0, inDict };
+    });
+
+    // every word casts a vote: sentiment words vote their intensity (+/-1 compensated),
+    // non-sentiment words each cast one neutral vote
+    let posVotes = 0, negVotes = 0, neuVotes = 0;
+    results.forEach(r => {
+      if (r.value > 0) posVotes += r.value + 1;
+      else if (r.value < 0) negVotes += Math.abs(r.value) + 1;
+      else neuVotes += 1;
+    });
+    const totalVotes = posVotes + negVotes + neuVotes;
+    const pos = totalVotes > 0 ? posVotes / totalVotes : 0;
+    const neg = totalVotes > 0 ? negVotes / totalVotes : 0;
+    const neu = totalVotes > 0 ? neuVotes / totalVotes : 0;
+
+    // compound: normalize the raw sum of matched word scores only
+    const rawSum = results.reduce((a, r) => a + r.value, 0);
+    const compound = rawSum === 0 ? 0 : rawSum / Math.sqrt(rawSum * rawSum + 15);
+
+    const matched = results.filter(r => r.inDict);
+    return { tokens: results, pos, neg, neu, compound, matchedCount: matched.length, totalCount: words.length };
+  }
+
+  function verdictOf(compound){
+    if (compound >= COMPOUND_POS) return "pos";
+    if (compound <= COMPOUND_NEG) return "neg";
+    return "neu";
+  }
+
+  // ---- render ----
+  const tokenRow = document.getElementById('token-row');
+  const notInDictNote = document.getElementById('not-in-dict-note');
+  const negVal = document.getElementById('neg-val');
+  const neuVal = document.getElementById('neu-val');
+  const posVal = document.getElementById('pos-val');
+  const matchedVal = document.getElementById('matched-val');
+  const compoundVal = document.getElementById('compound-val');
+  const verdictBadge = document.getElementById('verdict-badge');
+  const gaugeThumb = document.getElementById('gauge-thumb');
+  const input = document.getElementById('sentence-input');
+
+  function runScore(text){
+    if (!text || !text.trim()) return;
+    const result = score(text);
+
+    tokenRow.innerHTML = '';
+    const missing = [];
+    result.tokens.forEach((t, i) => {
+      if (/^[!?.]$/.test(t.raw)) return; // skip rendering bare punctuation as a "word" chip
+      const span = document.createElement('span');
+      span.className = 'token' + (t.inDict ? (t.value > 0 ? ' pos scored' : ' neg scored') : '');
+      span.style.animationDelay = (i * 45) + 'ms';
+      span.tabIndex = 0;
+
+      if (t.inDict){
+        span.innerHTML = t.raw + '<span class="score-tag">' + (t.value>0?'+':'') + t.value.toFixed(1) + '</span>';
+        span.title = '"' + t.key + '" is in VADER\'s dictionary with score ' + t.value;
+      } else {
+        span.textContent = t.raw;
+        span.title = '"' + t.key + '" is not in VADER\'s dictionary — it counts as a neutral vote, and adds nothing to compound';
+        missing.push(t.raw);
+      }
+      tokenRow.appendChild(span);
+    });
+
+    if (missing.length){
+      notInDictNote.innerHTML = '<span class="word-list">' + missing.length + ' word' + (missing.length===1?'':'s') + '</span> in this sentence aren\'t in VADER\'s dictionary. They still count as neutral votes in the scores below — but they never add any weight to the compound score, since compound only uses matched words.';
+      notInDictNote.classList.add('show');
+    } else {
+      notInDictNote.classList.remove('show');
+    }
+
+    negVal.textContent = result.neg.toFixed(2);
+    neuVal.textContent = result.neu.toFixed(2);
+    posVal.textContent = result.pos.toFixed(2);
+    matchedVal.textContent = result.matchedCount + '/' + result.totalCount;
+    compoundVal.textContent = (result.compound>=0?'+':'') + result.compound.toFixed(3);
+
+    const v = verdictOf(result.compound);
+    compoundVal.style.color = v==='pos' ? 'var(--pos)' : v==='neg' ? 'var(--neg)' : 'var(--ink)';
+    verdictBadge.className = 'verdict-badge ' + v;
+    verdictBadge.textContent = v === 'pos' ? 'POSITIVE' : v === 'neg' ? 'NEGATIVE' : 'NEUTRAL';
+
+    // gauge: map compound [-1,1] to [4%, 96%]
+    const pct = 4 + ((result.compound + 1) / 2) * 92;
+    gaugeThumb.style.left = pct + '%';
+
+    renderTrail(result);
+  }
+
+  // ---- math trail: shows the exact vote -> pile -> compound arithmetic for this sentence ----
+  const trailVoteList = document.getElementById('trail-vote-list');
+
+  function fmtSigned(n, digits){
+    digits = digits === undefined ? 1 : digits;
+    const s = n.toFixed(digits);
+    return (n >= 0 ? '+' : '') + s;
+  }
+
+  function renderTrail(result){
+    // 1. vote list — one row per word, showing exactly what it contributes
+    trailVoteList.innerHTML = '';
+    const voteRows = [];
+    result.tokens.forEach((t, i) => {
+      let cls, voteLabel, voteValue;
+      if (t.value > 0){
+        cls = 'pos';
+        voteValue = t.value + 1;
+        voteLabel = t.value.toFixed(1) + ' + 1 = ' + fmtSigned(voteValue);
+      } else if (t.value < 0){
+        cls = 'neg';
+        voteValue = Math.abs(t.value) + 1;
+        voteLabel = Math.abs(t.value).toFixed(1) + ' + 1 = ' + fmtSigned(voteValue);
+      } else {
+        cls = 'neu';
+        voteValue = 1;
+        voteLabel = 'no score → 1';
+      }
+      voteRows.push({ word:t.raw, cls, voteValue });
+
+      const row = document.createElement('div');
+      row.className = 'trail-vote-row ' + cls;
+      row.style.animationDelay = (i * 35) + 'ms';
+      row.innerHTML = '<span class="w">"' + t.raw + '"</span><span class="vote">' + voteLabel + '</span>';
+      trailVoteList.appendChild(row);
+    });
+
+    // 2. piles — sum each column and show the running formula
+    const posRows = voteRows.filter(r => r.cls === 'pos');
+    const negRows = voteRows.filter(r => r.cls === 'neg');
+    const neuRows = voteRows.filter(r => r.cls === 'neu');
+
+    const posSum = posRows.reduce((a,r)=>a+r.voteValue, 0);
+    const negSum = negRows.reduce((a,r)=>a+r.voteValue, 0);
+    const neuSum = neuRows.length; // each neutral word contributes exactly 1
+    const totalVotes = posSum + negSum + neuSum;
+
+    function buildFormula(rows){
+      if (!rows.length) return '(none)';
+      return rows.map(r => r.voteValue.toFixed(1)).join(' + ');
+    }
+
+    document.getElementById('pile-neg-sum').textContent = negSum.toFixed(1);
+    document.getElementById('pile-neg-formula').textContent = buildFormula(negRows);
+    document.getElementById('pile-neg-result').textContent = negSum.toFixed(1) + ' / ' + totalVotes.toFixed(1) + ' = ' + result.neg.toFixed(2);
+
+    document.getElementById('pile-neu-sum').textContent = neuSum.toFixed(1);
+    document.getElementById('pile-neu-formula').textContent = neuRows.length + ' word' + (neuRows.length===1?'':'s') + ' with no score, 1 each';
+    document.getElementById('pile-neu-result').textContent = neuSum.toFixed(1) + ' / ' + totalVotes.toFixed(1) + ' = ' + result.neu.toFixed(2);
+
+    document.getElementById('pile-pos-sum').textContent = posSum.toFixed(1);
+    document.getElementById('pile-pos-formula').textContent = buildFormula(posRows);
+    document.getElementById('pile-pos-result').textContent = posSum.toFixed(1) + ' / ' + totalVotes.toFixed(1) + ' = ' + result.pos.toFixed(2);
+
+    // 3. compound — only matched (dictionary) words, separate from the piles above
+    const matchedTokens = result.tokens.filter(t => t.inDict);
+    const compoundFormulaEl = document.getElementById('compound-formula');
+    if (matchedTokens.length){
+      compoundFormulaEl.textContent = matchedTokens.map(t => '"' + t.raw + '" (' + fmtSigned(t.value) + ')').join('  +  ');
+    } else {
+      compoundFormulaEl.textContent = 'no dictionary words matched — compound stays 0';
+    }
+    const rawSum = matchedTokens.reduce((a,t)=>a+t.value, 0);
+    document.getElementById('compound-rawsum').textContent = fmtSigned(rawSum);
+    document.getElementById('compound-normalized').textContent = (result.compound>=0?'+':'') + result.compound.toFixed(3);
+  }
+
+  document.getElementById('run-btn').addEventListener('click', () => runScore(input.value));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') runScore(input.value); });
+
+  // examples
+  const exampleRow = document.getElementById('example-row');
+  EXAMPLES.forEach((ex, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'example-btn' + (i===0 ? ' active' : '');
+    btn.textContent = 'Example ' + (i+1);
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.example-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      input.value = ex;
+      runScore(ex);
+    });
+    exampleRow.appendChild(btn);
+  });
+
+  // initial run
+  input.value = EXAMPLES[0];
+  runScore(EXAMPLES[0]);
+
+  // ---- dictionary sample table ----
+  const DICT_SAMPLE = [
+    ["best", 3.2], ["love", 3.2], ["great", 3.1], ["amazing", 2.8], ["win", 2.8],
+    ["good", 1.9], ["profit", 1.9], ["gains", 1.4],
+    ["loss", -1.3], ["worried", -1.2], ["weak", -1.9], ["beating", -2.0],
+    ["terrible", -2.1], ["hate", -2.7], ["worst", -3.1]
+  ];
+  const dictList = document.getElementById('dict-list');
+  DICT_SAMPLE.forEach(([word, val]) => {
+    const row = document.createElement('div');
+    row.className = 'dict-row';
+    const cls = val > 0 ? 'pos' : 'neg';
+    const pct = Math.min(Math.abs(val)/4 * 50, 50);
+    row.innerHTML = `
+      <span class="w">"${word}"</span>
+      <span class="s ${cls}">${val>0?'+':''}${val.toFixed(1)}</span>
+      <span class="dict-bar-track"><span class="dict-bar ${cls}" style="${cls==='pos' ? 'width:'+pct+'%' : 'width:'+pct+'%'}"></span></span>
+    `;
+    dictList.appendChild(row);
+  });
+
+  // ---- gap grid ----
+  const gapGrid = document.getElementById('gap-grid');
+  const GAP_TAGS = {
+    "moon":"bullish slang", "rocket":"bullish slang", "bull":"finance term", "bear":"finance term",
+    "diamond":"WSB slang", "hands":"WSB slang", "bagholding":"WSB slang", "tendies":"WSB slang",
+    "yolo":"WSB slang", "stonks":"internet slang", "soaring":"finance term", "plunging":"finance term"
+  };
+  Object.entries(GAP_TAGS).forEach(([word, tag]) => {
+    const div = document.createElement('div');
+    div.className = 'gap-word';
+    div.innerHTML = word + '<span class="tag">' + tag + '</span>';
+    gapGrid.appendChild(div);
+  });
+
+})();
+</script>
+
 </body>
 </html>
