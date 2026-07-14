@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How VADER Works: Interactive Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #4a6fa5;
+            --primary-light: #e8eef6;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --neutral: #95a5a6;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-dark: #2c3e50;
+            --text-light: #7f8c8d;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text-dark);
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 2rem 1rem;
+            text-align: center;
+        }
+
+        header h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2.5rem;
+        }
+
+        header p {
+            margin: 0;
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+
+        .card h2 {
+            margin-top: 0;
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary-light);
+            padding-bottom: 0.5rem;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 100px;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s ease;
+            align-self: flex-start;
+        }
+
+        button:hover {
+            background-color: #3b5982;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .score-box {
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .score-box.compound { background-color: var(--primary-light); color: var(--primary); grid-column: 1 / -1; font-size: 1.2rem;}
+        .score-box.pos { background-color: rgba(46, 204, 113, 0.1); color: var(--success); }
+        .score-box.neu { background-color: rgba(149, 165, 166, 0.1); color: var(--neutral); }
+        .score-box.neg { background-color: rgba(231, 76, 60, 0.1); color: var(--danger); }
+
+        .score-value {
+            font-size: 2rem;
+            margin-top: 0.5rem;
+            display: block;
+        }
+
+        .dictionary-viz {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+
+        .word-token {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            background: #fff;
+            border: 1px solid #ddd;
+        }
+
+        .word-token.positive { border-color: var(--success); color: var(--success); background: rgba(46, 204, 113, 0.05);}
+        .word-token.negative { border-color: var(--danger); color: var(--danger); background: rgba(231, 76, 60, 0.05);}
+        .word-token.neutral { border-color: var(--neutral); color: var(--neutral); }
+
+        .explanation {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1.5rem;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>VADER Sentiment Explorer</h1>
+        <p>Interactive Dictionary & Rules-Based Sentiment Analysis</p>
+    </header>
+
+    <div class="container">
+        
+        <div class="card">
+            <h2>What is VADER?</h2>
+            <p><strong>VADER</strong> (Valence Aware Dictionary and sEntiment Reasoner) is an NLP tool that relies on a <strong>dictionary</strong> (a list of words) mapped to sentiment scores. It reads a sentence, scores each word based on its rules, and calculates an overall sentiment!</p>
+            <p>Try typing a sentence below involving stock market terms (like "surge", "crash", "great", "terrible") to see how VADER acts like a detective, picking out specific words to determine the mood.</p>
+        </div>
+
+        <div class="card">
+            <h2>Test VADER's Logic</h2>
+            <div class="input-group">
+                <textarea id="inputText" placeholder="e.g., The stock market saw a massive surge today, it is absolutely amazing!"></textarea>
+                <button onclick="analyzeSentiment()">Analyze Sentiment</button>
+            </div>
+
+            <div id="resultsContainer" style="display: none;">
+                
+                <h3>How VADER "sees" your sentence:</h3>
+                <div class="dictionary-viz" id="wordViz">
+                    <!-- Words injected here -->
+                </div>
+
+                <div class="explanation" id="logicExplanation">
+                    <!-- Explanation injected here -->
+                </div>
+
+                <h3>Final Scores:</h3>
+                <div class="results">
+                    <div class="score-box pos">
+                        Positive
+                        <span class="score-value" id="posScore">0.00</span>
+                    </div>
+                    <div class="score-box neu">
+                        Neutral
+                        <span class="score-value" id="neuScore">0.00</span>
+                    </div>
+                    <div class="score-box neg">
+                        Negative
+                        <span class="score-value" id="negScore">0.00</span>
+                    </div>
+                    <div class="score-box compound">
+                        Compound Score (-1 to 1)
+                        <span class="score-value" id="compScore">0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // A mini, simplified version of VADER's lexicon for educational purposes
+        const mockLexicon = {
+            "surge": 1.5, "amazing": 2.0, "great": 1.8, "good": 1.0, "profit": 1.2, "bullish": 1.6, "skyrocket": 2.5, "celebrate": 1.5,
+            "crash": -2.0, "terrible": -2.1, "bad": -1.0, "loss": -1.5, "bearish": -1.6, "plummet": -2.2, "awful": -1.8, "scary": -1.2
+        };
+
+        function analyzeSentiment() {
+            const text = document.getElementById('inputText').value.toLowerCase();
+            if (!text.trim()) return;
+
+            document.getElementById('resultsContainer').style.display = 'block';
+            
+            // Clean punctuation and split into words
+            const words = text.replace(/[.,!?;()]/g, '').split(/\s+/);
+            
+            let posSum = 0, negSum = 0, neuCount = 0;
+            const vizContainer = document.getElementById('wordViz');
+            vizContainer.innerHTML = '';
+
+            let foundPos = [];
+            let foundNeg = [];
+
+            words.forEach(word => {
+                if(!word) return;
+                
+                const span = document.createElement('span');
+                span.classList.add('word-token');
+                
+                let score = mockLexicon[word] || 0;
+                
+                if (score > 0) {
+                    span.classList.add('positive');
+                    span.textContent = `${word} (+${score})`;
+                    posSum += score;
+                    foundPos.push(word);
+                } else if (score < 0) {
+                    span.classList.add('negative');
+                    span.textContent = `${word} (${score})`;
+                    negSum += Math.abs(score);
+                    foundNeg.push(word);
+                } else {
+                    span.classList.add('neutral');
+                    span.textContent = `${word} (0)`;
+                    neuCount++;
+                }
+                
+                vizContainer.appendChild(span);
+            });
+
+            // Calculate mock VADER scores
+            const total = posSum + negSum + neuCount + 0.0001; // avoid div by zero
+            const pos = posSum / total;
+            const neg = negSum / total;
+            const neu = neuCount / total;
+            
+            // Simplified compound math for demo
+            let compound = (posSum - negSum) / Math.sqrt((posSum + negSum) * (posSum + negSum) + 15);
+            // Bound between -1 and 1
+            compound = Math.max(-1, Math.min(1, compound));
+
+            // Update UI
+            document.getElementById('posScore').textContent = pos.toFixed(3);
+            document.getElementById('negScore').textContent = neg.toFixed(3);
+            document.getElementById('neuScore').textContent = neu.toFixed(3);
+            document.getElementById('compScore').textContent = compound.toFixed(3);
+
+            // Generate Logic Explanation
+            let exp = `VADER scanned your text and found `;
+            if (foundPos.length > 0) exp += `<strong>${foundPos.length} positive words</strong> (${foundPos.join(', ')}) `;
+            if (foundPos.length > 0 && foundNeg.length > 0) exp += ` and `;
+            if (foundNeg.length > 0) exp += `<strong>${foundNeg.length} negative words</strong> (${foundNeg.join(', ')}) `;
+            if (foundPos.length === 0 && foundNeg.length === 0) exp += `no strongly sentimental words in its dictionary. `;
+            
+            exp += `<br><br>The <strong>Compound Score</strong> combines these values. `;
+            if (compound >= 0.05) exp += `Since it's <strong>&ge; 0.05</strong>, VADER officially labels this sentence as <strong>Positive</strong>!`;
+            else if (compound <= -0.05) exp += `Since it's <strong>&le; -0.05</strong>, VADER officially labels this sentence as <strong>Negative</strong>!`;
+            else exp += `Since it's between -0.05 and 0.05, VADER officially labels this sentence as <strong>Neutral</strong>.`;
+
+            document.getElementById('logicExplanation').innerHTML = exp;
+        }
+    </script>
+</body>
+</html>
